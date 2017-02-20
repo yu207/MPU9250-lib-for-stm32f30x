@@ -10,8 +10,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////////
 //Magnetometer Registers
-#define AK8963_ADDRESS   0x0C
-#define WHO_AM_I_AK8963  0x49 // (AKA WIA) should return 0x48
+#define WHO_AM_I_AK8963  0x00 // (AKA WIA) should return 0x48
 #define INFO             0x01
 #define AK8963_ST1       0x02  // data ready status bit 0
 #define AK8963_XOUT_L    0x03  // data
@@ -160,7 +159,6 @@
 #define YA_OFFSET_L        0x7B
 #define ZA_OFFSET_H        0x7D
 #define ZA_OFFSET_L        0x7E
-#define MPU9250_ADDRESS		 0X68
 ////////////////////////////////////////////////////////////////////////////////////
 
 #define ACCEL_MGLSB         8192.0f  // 8192 LSB/mg +/-4g full scale range
@@ -175,6 +173,8 @@
 
 
 //extern functions
+extern uint8_t WIA_MPU9250(void);
+extern uint8_t WIA_AK8963(void);
 extern void I2C_Congiguration(void);
 extern void MPU9250_Init(void);
 extern void MPU9250_Mag_Init(float *x, float *y, float *z) ;

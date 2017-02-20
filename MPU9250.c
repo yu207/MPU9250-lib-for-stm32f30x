@@ -11,7 +11,8 @@
 #define IMUAddress						0xd0
 #define IMU_I2C								I2C1	
 
-uint16_t Address_mpu6050 = 0xd0;
+uint16_t MPU9250_ADDRESS = 0Xd0;
+uint16_t AK8963_ADDRESS = 0x0c;//0x18;//0x0C << 1;
 uint16_t MPU9250_mag_addr = 0x18;
 
 ////////////////////////////////////////FUNCTION DEFINE/////////////////////////////////////////////
@@ -66,30 +67,98 @@ void I2C_Congiguration(void)
 	
 }
 
+uint8_t WIA_MPU9250(void){
+	char read=0x01;
+	MPU9250_RegRead(MPU9250_ADDRESS, WHO_AM_I_MPU9250, &read);
+	return read;
+}
+
+uint8_t WIA_AK8963(void){
+	char read=0x01;
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_ADDR,AK8963_ADDRESS|0x80);//assign AK8963 to slave 0 of i2c master, transfer set to be 'read' for data reading
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_REG,WHO_AM_I_AK8963);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_CTRL,0x81);//enable 1-byte i2c transfer
+	delay_ms(20);
+	MPU9250_RegRead(MPU9250_ADDRESS, EXT_SENS_DATA_00, &read);
+	return read;
+}
 
 void MPU9250_Init(void)
 {
 
 	I2C_Congiguration();	
 	delay_ms(100);
-	MPU9250_RegWrite(Address_mpu6050,PWR_MGMT_1,0x80);
+	MPU9250_RegWrite(MPU9250_ADDRESS,PWR_MGMT_1,0x80);
 	delay_ms(10);
-	MPU9250_RegWrite(Address_mpu6050,PWR_MGMT_1,0x03); //Select gyro Z axis for clock
+	MPU9250_RegWrite(MPU9250_ADDRESS,PWR_MGMT_1,0x03); //Select gyro Z axis for clock
 	delay_ms(5);
-	MPU9250_RegWrite(Address_mpu6050,SMPLRT_DIV, 19); //Sample rate=50Hz Fsample=1Khz/(19+1) = 50Hz set 0x00 achieve 8KHz
+	MPU9250_RegWrite(MPU9250_ADDRESS,SMPLRT_DIV, 19); //Sample rate=50Hz Fsample=1Khz/(19+1) = 50Hz set 0x00 achieve 8KHz
 	delay_ms(5);
- 	MPU9250_RegWrite(Address_mpu6050,CONFIG, 0x04); //FS & DLPF FS=2000º/s, DLPF = 20Hz LPF set 0x00 achieve Accel&Gyro max bandwidth 
+ 	MPU9250_RegWrite(MPU9250_ADDRESS,CONFIG, 0x04); //FS & DLPF FS=2000º/s, DLPF = 20Hz LPF set 0x00 achieve Accel&Gyro max bandwidth 
 	delay_ms(5);
-	MPU9250_RegWrite(Address_mpu6050,GYRO_CONFIG, 0x18); //BITS_FS_2000DPS
+	MPU9250_RegWrite(MPU9250_ADDRESS,GYRO_CONFIG, 0x18); //BITS_FS_2000DPS
 	delay_ms(5);
-	MPU9250_RegWrite(Address_mpu6050,ACCEL_CONFIG, 0x09);//Accel scale +/-4g (Full Scale 8192 LSB/mg) or 4096 LSB bits/g
+	MPU9250_RegWrite(MPU9250_ADDRESS,ACCEL_CONFIG, 0x09);//Accel scale +/-4g (Full Scale 8192 LSB/mg) or 4096 LSB bits/g
 	delay_ms(5);
-	MPU9250_RegWrite(Address_mpu6050, INT_PIN_CFG, 0x22);  
+	MPU9250_RegWrite(MPU9250_ADDRESS, INT_PIN_CFG, 0x22);  
   delay_ms(5);  
-  MPU9250_RegWrite(Address_mpu6050, INT_ENABLE, 0x01);  // Enable data ready (bit 0) interrupt
+  MPU9250_RegWrite(MPU9250_ADDRESS, INT_ENABLE, 0x01);  // Enable data ready (bit 0) interrupt
 	delay_ms(5);
- // MPU9250_RegWrite(Address_mpu6050, MPUREG_INT_PIN_CFG, 0x02); //INT_PIN_CFG (Bypass Enable Configuration Mode), Enable the access to the auxiliary I2C bus (and the magnetometer)
+ // MPU9250_RegWrite(MPU9250_ADDRESS, MPUREG_INT_PIN_CFG, 0x02); //INT_PIN_CFG (Bypass Enable Configuration Mode), Enable the access to the auxiliary I2C bus (and the magnetometer)
+	
+	//i2c master mode config
+	//MPU9250_RegWrite(MPU9250_ADDRESS,INT_PIN_CFG,0x00);//disable bypass mode for ext sensor
+	//delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,USER_CTRL,0x20);//enable i2c master mode for ext sensor
+	delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_MST_CTRL,0x0d);//i2c master clock speed of 400khz
+	
 	delay_ms(1000);
+}
+
+void MPU9250_Mag_Init(float *x, float *y, float *z) // initAK8963 through i2c master
+{
+  char sen_data[3]; // x/y/z sensitivity register data stored here
+	char data = EXT_SENS_DATA_00; //ext sensor data register
+
+	//soft restart AK8963
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_ADDR,AK8963_ADDRESS);//assign AK8963 to slave 0 of i2c master, transfer set to be 'write' for configuration
+	delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_REG,AK8963_CNTL2);//Point save 0 register at AK8963's control 2 (soft reset) register
+	delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_CTRL,0x81);//enable 1-byte i2c transfer
+	delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_DO,0x01);//send 01 via slave 0 to AK8963 to trigger a soft restart
+	delay_ms(50);
+	
+	//configure AK8963 through i2c master
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_ADDR,AK8963_ADDRESS);//assign AK8963 to slave 0 of i2c master, transfer set to be 'write' for configuration
+	delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_REG,AK8963_CNTL1);//Point save 0 register at AK8963's control 1 (mode) register
+	delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_CTRL,0x81);//enable 1-byte i2c transfer
+	delay_ms(50);
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_DO,0x16);//set AK8963 to be: 16bits output/continuous measurement mode 2 (output size and measurement mode can be changed))
+	delay_ms(50);
+	
+	//read sensitivity values through i2c master
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_ADDR,AK8963_ADDRESS|0x80);//assign AK8963 to slave 0 of i2c master, transfer set to be 'read' for data reading
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_REG,AK8963_ASAX);//Point save 0 register at AK8963's sensitivity register
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_CTRL,0x83);//enable 3-byte i2c transfer
+	delay_ms(50);
+  MPU9250_DataWrite(MPU9250_ADDRESS, &data, 1, 0); //AK8963_ASAX reg starting address
+  MPU9250_DataRead(MPU9250_ADDRESS, sen_data, 3, 0);  // Read the x-, y-, and z-axis calibration values
+	  *x = (float)(sen_data[0] - 128)/256.0f + 1.0f; // Return x-axis sensitivity adjustment values 
+    *y = (float)(sen_data[1] - 128)/256.0f + 1.0f;  
+    *z = (float)(sen_data[2] - 128)/256.0f + 1.0f;  
+	
+	//set slave 0 to read magnetometer data
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_ADDR,AK8963_ADDRESS|0x80);//assign AK8963 to slave 0 of i2c master, transfer set to be 'read' for data reading
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_REG,AK8963_XOUT_L);//Point save 0 register at AK8963's starting address of data registers
+	MPU9250_RegWrite(MPU9250_ADDRESS,I2C_SLV0_CTRL,0x87);//enable 7-bytes i2c transfer, 6 bytes of data and 1 byte of ST2
+	delay_ms(50);
+	delay_ms(1000);
+	//now, 6-bytes of AK8963 reading will be available in EXT_SENS_DATA_00-EXT_SENS_DATA_05
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -98,8 +167,8 @@ void MPU9250_Read_Acc(float *x, float *y, float *z)
     signed int x_a, y_a, z_a;
     char c_data[6];  
 		char data = ACCEL_XOUT_H;
-		MPU9250_DataWrite(Address_mpu6050, &data, 1, 0); //ACCEL_XOUT_H reg starting address
-		MPU9250_DataRead(Address_mpu6050, c_data, 6, 0);   
+		MPU9250_DataWrite(MPU9250_ADDRESS, &data, 1, 0); //ACCEL_XOUT_H reg starting address
+		MPU9250_DataRead(MPU9250_ADDRESS, c_data, 6, 0);   
     x_a =  c_data[0] << 8;
     x_a += c_data[1];
     y_a =  c_data[2] << 8;
@@ -124,8 +193,8 @@ void MPU9250_Read_Gyro(float *x, float *y, float *z)
     int x_g, y_g, z_g;
     char c_data[6];
 		char data = GYRO_XOUT_H;
-		MPU9250_DataWrite(Address_mpu6050, &data, 1, 0); //GYRO_XOUT_H reg starting address
-		MPU9250_DataRead(Address_mpu6050, c_data, 6, 0);
+		MPU9250_DataWrite(MPU9250_ADDRESS, &data, 1, 0); //GYRO_XOUT_H reg starting address
+		MPU9250_DataRead(MPU9250_ADDRESS, c_data, 6, 0);
     x_g =  c_data[0] << 8;
     x_g += c_data[1];
     y_g =  c_data[2] << 8;
@@ -145,71 +214,17 @@ void MPU9250_Read_Gyro(float *x, float *y, float *z)
     *z = toRadians((float)((float)z_g / GYRO_LSB_DPS));
 }
 
-
-void MPU9250_Mag_Init(float *x, float *y, float *z) // initAK8963
-{
-	MPU9250_RegWrite(Address_mpu6050,USER_CTRL,0x20);//enable i2c master mode
-	MPU9250_RegWrite(Address_mpu6050,I2C_MST_CTRL,0x0d);//i2c master clock speed of 400khz
-	MPU9250_RegWrite(Address_mpu6050,I2C_SLV0_ADDR,AK8963_ADDRESS);//assign AK8963 to slave 0 of i2c master
-	MPU9250_RegWrite(Address_mpu6050,I2C_SLV0_REG,AK8963_CNTL2);//Point save 0 register at AK8963's control 2 (soft reset) register
-	MPU9250_RegWrite(Address_mpu6050,I2C_SLV0_DO,0x01);//send 01 via slave 0 to AK8963 to trigger a soft restart 
-	MPU9250_RegWrite(Address_mpu6050,I2C_SLV0_CTRL,0x81);//enable 1-byte i2c reading
-	
-	MPU9250_RegWrite(Address_mpu6050,I2C_SLV0_REG,AK8963_CNTL1);//Point save 0 register at AK8963's control 1 (mode) register
-	MPU9250_RegWrite(Address_mpu6050,I2C_SLV0_DO,0x12);//set AK8963 to be: 16bits output/continuous measurement mode 1 (output size and measurement mode can be changed))
-	MPU9250_RegWrite(Address_mpu6050,I2C_SLV0_CTRL,0x81);//enable 1-byte i2c reading (reading size can be changed)
-	//now, 1-byte of AK8963 reading will be available in EXT_SENS_DATA_00(in this case of SLV0)
-
-	//TODO:
-	//Not sure if still need to do the following for new configurations with I2C master mode:
-	//Power down?
-	//ENter Fuse ROM access mode?
-	//read the x-,y-,and z-axis calibration values?
-	//return x-axis sensitivity adjustment values?
-	
-/*	
-    char sen_data[3]; // x/y/z sensitivity register data stored here
-		char data = AK8963_ASAX;
-	
-  MPU9250_RegWrite(AK8963_ADDRESS, AK8963_CNTL1, 0x00); // Power down
-  delay_ms(10);
-  MPU9250_RegWrite(AK8963_ADDRESS, AK8963_CNTL1, 0x0F); // Enter Fuse ROM access mode
-  delay_ms(10);
-  MPU9250_DataWrite(AK8963_ADDRESS, &data, 1, 0); //GYRO_XOUT_H reg starting address
-  MPU9250_DataRead(AK8963_ADDRESS, sen_data, 3, 0);  // Read the x-, y-, and z-axis calibration values
-	  *x = (float)(sen_data[0] - 128)/256.0f + 1.0f; // Return x-axis sensitivity adjustment values 
-    *y = (float)(sen_data[1] - 128)/256.0f + 1.0f;  
-    *z = (float)(sen_data[2] - 128)/256.0f + 1.0f;  
-*/
-}
-
 void MPU9250_Read_Mag(float *x, float *y, float *z)
 {
   int x_m, y_m, z_m;
-	char rawData[6];  // x/y/z  register data stored here
-	char vector;
-	char data = AK8963_XOUT_L;
+	char rawData[7];  // x/y/z  register data stored here, 6 bytes of data and 1 byte of ST2
+	char data = EXT_SENS_DATA_00;
 	
-  /*
-	MPU9250_RegWrite(AK8963_ADDRESS, AK8963_CNTL1, 0x01); // toggle enable data read from magnetometer, no continuous read mode!
-  delay_ms(10);
-	
-  // Only accept a new magnetometer data read if the data ready bit is set and 
-  // if there are no sensor overflow or data read errors
-	MPU9250_RegRead(AK8963_ADDRESS, AK8963_ST1, &vector);
-	*/
-	
-	//TODO:
-	//read data from EXT_SENS_DATA_00 (this data register corresponds to I2C_SLV0, which is bonded to AK8963 by the configuration in MPU9250_Mag_Init())
-	
-	
-  if( vector & 0x01)  // wait for magnetometer data ready bit to be set
-	{
-	MPU9250_DataWrite(AK8963_ADDRESS, &data, 1, 0); //GYRO_XOUT_H reg starting address
-  MPU9250_DataRead(AK8963_ADDRESS, rawData, 6, 0);  // Read the six raw data registers sequentially into data array
+	MPU9250_DataWrite(MPU9250_ADDRESS, &data, 1, 0); //GYRO_XOUT_H reg starting address
+  MPU9250_DataRead(MPU9250_ADDRESS, rawData, 7, 0);  // Read the six raw data registers sequentially into data array
   x_m = ((int16_t)rawData[1] << 8) | rawData[0] ;  // Turn the MSB and LSB into a signed 16-bit value
   y_m = ((int16_t)rawData[3] << 8) | rawData[2] ;  
-  z_m = ((int16_t)rawData[5] << 8) | rawData[4] ; 
+  z_m = ((int16_t)rawData[5] << 8) | rawData[4] ;
 		    //two's complement  
     if(x_m >= 0x8000)
         x_m -= 0xFFFF;
@@ -221,7 +236,7 @@ void MPU9250_Read_Mag(float *x, float *y, float *z)
        *y = (float)((float)x_m / MAG_LSB_BPUT);   //Magnetic LSB Bit/uT
        *x = -(float)((float)y_m / MAG_LSB_BPUT);
        *z = (float)((float)z_m / MAG_LSB_BPUT);
-  }
+  //}
 }
 
 //////////////////////////////////////////I2C READ/WRITE FUNCTIONALITY OPERATION///////////////////////////////////////////////////////////
